@@ -1,0 +1,40 @@
+name: Apply mobile table layout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - '.github/workflows/mobile-table-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-mobile-tables:
+    if: "!contains(github.event.head_commit.message, '[mobile-table-fix]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update responsive table CSS
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+          old = 'table{width:100%;border-collapse:collapse;min-width:510px;font-size:12px}'
+          new = '''table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:0;font-size:12px}th:first-child,td:first-child{width:6%}th:nth-child(2),td:nth-child(2){width:28%;text-align:left}th:nth-child(n+3),td:nth-child(n+3){width:8%}td:nth-child(2){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'''
+          if old not in s:
+              raise SystemExit('Expected table CSS was not found')
+          s = s.replace(old, new, 1)
+          mobile = '@media(max-width:559px){table{font-size:11px}th,td{padding:8px 2px}.tablewrap{overflow-x:hidden}th:nth-child(2),td:nth-child(2){padding-left:4px;padding-right:4px}}'
+          s = s.replace('@media(min-width:560px)', mobile + '@media(min-width:560px)', 1)
+          p.write_text(s)
+          PY
+      - name: Commit responsive CSS
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet || git commit -m 'Fix mobile table layout [mobile-table-fix]'
+          git push
