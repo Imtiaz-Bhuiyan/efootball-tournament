@@ -17,21 +17,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply responsive fixes
+      - name: Apply overview and responsive fixes
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           p = Path('index.html')
           s = p.read_text()
+
           mobile_old = '@media(max-width:559px){table{font-size:11px}th,td{padding:8px 2px}.tablewrap{overflow-x:hidden}th:nth-child(2),td:nth-child(2){padding-left:4px;padding-right:4px}}'
           mobile_new = '@media(max-width:559px){table{font-size:11px}th,td{padding:8px 2px}.tablewrap{overflow-x:hidden}th:nth-child(2),td:nth-child(2){padding-left:4px;padding-right:4px}.fixture{width:100%}}'
           if mobile_old in s:
               s = s.replace(mobile_old, mobile_new, 1)
-          old = "function overview(t){return `<div class=\"card\"><div class=\"title\">Group stage progress</div><b>${t.matches.filter(m=>m.stage==='group'&&m.status==='completed').length} / 12</b> matches completed</div>${table(t,'A')}${table(t,'B')}<div class=\"section\">Recent results</div><div class=\"card\">${t.matches.filter(m=>m.status==='completed').slice(-3).reverse().map(m=>`<div style=\"padding:8px 0;border-bottom:1px solid var(--line)\">${esc(pname(m.home_id))} <b>${m.home_score}–${m.away_score}</b> ${esc(pname(m.away_id))}</div>`).join('')||'<span class=\"small\">No results yet.</span>'}</div>`}"
-          new = "function overview(t){const upcoming=['A','B'].map(g=>{const ms=t.matches.filter(m=>m.stage==='group'&&m.group_name===g&&m.status!=='completed').slice(0,3);return `<div class=\"section\">Upcoming · Group ${g}</div>${ms.map(fixture).join('')||'<div class=\"card empty\">No upcoming matches in this group.</div>'}`}).join('');return `<div class=\"card\"><div class=\"title\">Group stage progress</div><b>${t.matches.filter(m=>m.stage==='group'&&m.status==='completed').length} / 12</b> matches completed</div>${table(t,'A')}${table(t,'B')}<div class=\"section\">Upcoming matches</div>${upcoming}<div class=\"section\">Recent results</div><div class=\"card\">${t.matches.filter(m=>m.status==='completed').slice(-3).reverse().map(m=>`<div style=\"padding:8px 0;border-bottom:1px solid var(--line)\">${esc(pname(m.home_id))} <b>${m.home_score}–${m.away_score}</b> ${esc(pname(m.away_id))}</div>`).join('')||'<span class=\"small\">No results yet.</span>'}</div>`}"
-          if old in s:
-              s = s.replace(old, new, 1)
-          p.write_text(s)
+
+          new_fn = '''function renderOverview(t,done,total){const A=standings(t,'A'),B=standings(t,'B');const pname=id=>t.participants.find(p=>p.id===id)?.name||'TBD';const upcoming=['A','B'].map(g=>{const ms=t.matches.filter(m=>m.stage==='group'&&m.group_name===g&&m.status==='scheduled').slice(0,3);return '<div class="title" style="margin-top:14px">Group '+g+'</div>'+(ms.map(m=>fixtureHTML(m,pname)).join('')||'<div class="card empty">No upcoming matches in this group.</div>')}).join('');return '<div class="name">'+esc(t.name)+'</div><div class="desc">'+esc(t.description||'Friendly eFootball tournament')+'</div><div class="badges"><span class="badge live">'+esc(t.status.replace('_',' '))+'</span><span class="badge">'+done+'/'+total+' matches</span></div><div class="section">Current standings</div>'+standMini('A',A)+standMini('B',B)+'<div class="section">Upcoming matches</div>'+upcoming+(state.admin?'<div class="card notice"><b>Organizer mode</b><br>Admin controls are available from individual match actions.</div>':'')}'''
+          pattern = r'function renderOverview\(t,done,total\)\{.*?\}\nfunction standMini'
+          replacement = new_fn + '\nfunction standMini'
+          s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('Could not locate renderOverview function')
+          p.write_text(s2)
           PY
       - name: Commit fixes
         run: |
